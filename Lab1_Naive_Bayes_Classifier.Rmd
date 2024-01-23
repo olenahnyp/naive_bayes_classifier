@@ -1,0 +1,513 @@
+---
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Probability and Statistics
+
+# Lab Assignment 1: Naive Bayes Classifier
+
+## Work breakdown
+
+-   *Name1 Surname1*: Oleksandr Ivaniuk
+-   *Name2 Surname2*: Olena Hnyp
+-   *Name3 Surname3*: Dmytro Hamula
+
+## Introduction
+
+During the first three weeks, you learned a couple of essential notions
+and theorems, and one of the most important among them is the *Bayes
+theorem*.
+
+One of its applications is **Naive Bayes classifier**, which is a
+probabilistic classifier whose aim is to determine which class some
+observation probably belongs to by using the Bayes formula:
+$$\mathsf{P}(\mathrm{class}\mid \mathrm{observation})=\frac{\mathsf{P}(\mathrm{observation}\mid\mathrm{class})\mathsf{P}(\mathrm{class})}{\mathsf{P}(\mathrm{observation})}$$
+
+Under the strong independence assumption, one can calculate
+$\mathsf{P}(\mathrm{observation} \mid \mathrm{class})$ as
+$$\mathsf{P}(\mathrm{observation}) = \prod_{i=1}^{n} \mathsf{P}(\mathrm{feature}_i), \qquad \mathsf{P}(\mathrm{observation} \mid \mathrm{class}) = \prod_{i=1}^{n} \mathsf{P}(\mathrm{feature}_i \mid \mathrm{class}),$$
+where $n$ is the total number of features describing a given
+observation. Thus, $\mathsf{P}(\mathrm{class}|\mathrm{observation})$ now
+can be calculated as
+
+$$\mathsf{P}(\mathrm{class} \mid \mathrm{\mathrm{observation}}) = \mathsf{P}(\mathrm{class})\times \prod_{i=1}^{n}\frac{\mathsf{P}(\mathrm{feature}_i\mid \mathrm{class})}{\mathsf{P}(\mathrm{feature}_i)}\tag{1}$$
+
+All the terms on the right-hand side can be estimated from the data as
+respective relative frequencies;\
+**\*see [this
+site](https://monkeylearn.com/blog/practical-explanation-naive-bayes-classifier/)
+for more detailed explanations\***
+
+## Data description
+
+There are 5 datasets uploaded on the cms (data.zip)
+
+To determine your variant, take your team number from the list of teams
+on cms and take *mod 5* - this is the number of your data set.
+
+-   **0 - authors** This data set consists of citations of three famous
+    writers: Edgar Alan Poe, Mary Wollstonecraft Shelley and HP
+    Lovecraft. The task with this data set is to classify a piece of
+    text with the author who was more likely to write it.
+
+-   **1 - discrimination** This data set consists of tweets that have
+    discriminatory (sexism or racism) messages or of tweets that are of
+    neutral mood. The task is to determine whether a given tweet has
+    discriminatory mood or does not.
+
+-   **2 - fake news** This data set contains data of American news: a
+    headline and an abstract of the article. Each piece of news is
+    classified as fake or credible. The task is to classify the news
+    from test.csv as credible or fake.
+
+-   **3 - sentiment** All the text messages contained in this data set
+    are labeled with three sentiments: positive, neutral or negative.
+    The task is to classify some text message as the one of positive
+    mood, negative or neutral.
+
+-   **4 - spam** This last data set contains SMS messages classified as
+    spam or non-spam (ham in the data set). The task is to determine
+    whether a given message is spam or non-spam.
+
+Each data set consists of two files: *train.csv* and *test.csv*. The
+first one you will need find the probabilities distributions for each of
+the features, while the second one is needed for checking how well your
+classifier works.
+
+```{r}
+# here goes a list of recommended libraries,
+# though you may install other ones if they are needed
+library(tidytext)
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(ggwordcloud)
+```
+
+## Outline of the work
+
+1.  **Data pre-processing** (includes removing punctuation marks and
+    stop words, representing each message as a bag-of-words)
+2.  **Data visualization** (it's time to plot your data!)
+3.  **Classifier implementation** (using the training set, calculate all
+    the conditional probabilities in formula (1) and then use those to
+    predict classes for messages in the testing set)
+4.  **Measurements of effectiveness of your classifier** (accuracy,
+    precision and recall curves, F1 score metric etc)
+5.  **Conclusions**
+
+*!! do not forget to submit both the (compiled) Rmd source file and the
+.html output !!*
+
+## Data pre-processing
+
+-   Read the *.csv* data files.
+-   Сlear your data from punctuation or other unneeded symbols.
+-   Clear you data from stop words. You don't want words as is, and, or
+    etc. to affect your probabilities distributions, so it is a wise
+    decision to get rid of them. Find list of stop words in the cms
+    under the lab task.
+-   Represent each test message as its bag-of-words. Here:
+    <https://machinelearningmastery.com/gentle-introduction-bag-words-model/>
+    you can find general introduction to the bag-of-words model and
+    examples on to create it.
+-   It is highly recommended to get familiar with R dataframes, it would
+    make the work much easier to do.
+-   Useful links:
+    -   <https://steviep42.github.io/webscraping/book/bagofwords.html#tidytext> -
+        example of using *tidytext* to count frequencies of the words.
+    -   Basics of Text Mining in R:
+        <http://rstudio-pubs-static.s3.amazonaws.com/256588_57b585da6c054349825cba46685d8464.html>
+        . Note that it also includes an example on how to create a bag
+        of words from your text document.
+
+```{r}
+list.files(getwd())
+list.files("data/4-spam")
+```
+
+```{r}
+test_path <- "data/4-spam/test.csv"
+train_path <- "data/4-spam/train.csv"
+
+stop_words <- read_file("stop_words.txt")
+# https://stackoverflow.com/questions/27195912/why-does-strsplit-return-a-list
+splitted_stop_words <- strsplit(stop_words, split='\n')
+splitted_stop_words <- splitted_stop_words[[1]]
+
+```
+
+```{r}
+train <-  read.csv(file = train_path, stringsAsFactors = FALSE)
+test <-  read.csv(file = test_path, stringsAsFactors = FALSE)
+print(train)
+```
+
+```{r}
+# note the power functional features of R bring us! 
+
+tidy_text_training <- train %>%
+                      mutate(Category = ifelse(Category == "spam", 1, 0)) %>%
+                      unnest_tokens('splitted', 'Message', token = "lines")
+tidy_text_test <- test %>%
+                      mutate(Category = ifelse(Category == "spam", 1, 0)) %>%
+                      unnest_tokens('splitted', 'Message', token = "lines")
+
+training_X = tidy_text_training$splitted
+training_y = tidy_text_training$Category
+
+test_X = tidy_text_test$splitted
+test_y = tidy_text_test$Category
+
+tidy_text <- unnest_tokens(train, 'splitted', 'Message', token="words") %>%
+             filter(!splitted %in% splitted_stop_words)
+
+spam_df <- tidy_text[tidy_text$Category == "spam", ]
+word_counts_spam <- spam_df %>% count(splitted, sort = TRUE)
+spam_df <- left_join(spam_df, word_counts_spam, by = "splitted")
+spam_df <- spam_df %>% distinct()
+spam_df <- spam_df %>%
+  arrange(desc(n))
+
+ham_df <- tidy_text[tidy_text$Category == "ham", ]
+word_counts_ham <- ham_df %>% count(splitted, sort = TRUE)
+ham_df <- left_join(ham_df, word_counts_ham, by = "splitted")
+ham_df <- ham_df %>% distinct()
+ham_df <- ham_df %>%
+  arrange(desc(n))
+
+word_counts <- tidy_text %>% count(splitted, sort = TRUE)
+tidy_text <- left_join(tidy_text, word_counts, by = "splitted")
+tidy_text$Category <- "ham + spam"
+tidy_text <- tidy_text %>% distinct()
+tidy_text <- tidy_text %>%
+  arrange(desc(n))
+tidy_text
+
+spam_df
+ham_df
+```
+
+## Data visualization
+
+Each time you work with some data, you need to understand it before you
+start processing it. R has very powerful tools to make nice plots and
+visualization. Show what are the most common words for negative and
+positive examples as a histogram, word cloud etc. Be creative!
+
+```{r}
+first_30_rows_spam <- head(spam_df, 30)
+set.seed(42)
+ggplot(first_30_rows_spam, aes(label = splitted, size = n, color = factor(sample.int(10, nrow(first_30_rows_spam), replace = TRUE)))) +
+  scale_size_area(max_size = 20) +
+  geom_text_wordcloud() +
+  theme_minimal()
+```
+
+```{r}
+first_30_rows_ham <- head(ham_df, 30)
+set.seed(42)
+ggplot(first_30_rows_ham, aes(label = splitted, size = n, color = factor(sample.int(10, nrow(first_30_rows_ham), replace = TRUE)))) +
+  scale_size_area(max_size = 20) +
+  geom_text_wordcloud() +
+  theme_minimal()
+```
+
+```{r}
+ggplot(data = first_30_rows_spam, aes(x = splitted, y = n)) +
+  geom_bar(stat = "identity", fill = "red") +
+  xlab("Spam words") +
+  ylab("Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+ggplot(data = first_30_rows_ham, aes(x = splitted, y = n)) +
+  geom_bar(stat = "identity", fill = "green") +
+  xlab("Ham words") +
+  ylab("Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## Classifier implementation
+
+```{r}
+naiveBayes <- setRefClass("naiveBayes",
+                          
+       # here it would be wise to have some vars to store intermediate result
+       # frequency dict etc. Though pay attention to bag of words!
+       fields = list(incorrect = "data.frame", df_test = "data.frame"),
+       methods = list(
+                    # prepare your training data as X - bag of words for each of your
+                    # messages and corresponding label for the message encoded as 0 or 1 
+                    # (binary classification task)
+                    fit = function(X, y)
+                    {
+                        df <- data.frame(
+                            Category = y,
+                            Message = X
+                        )
+                        df <- unnest_tokens(df, "splitted", "Message", token = "words") %>%
+                                        filter(!(splitted %in% splitted_stop_words))
+                        spam_df_train <- df[df$Category == "1", ]
+                        word_counts_spam <- spam_df_train %>% count(splitted, sort = TRUE)
+                        spam_df_train <- left_join(spam_df_train, word_counts_spam, by = "splitted")
+                        spam_df_train <- spam_df_train %>% distinct()
+                        spam_df_train <- spam_df_train %>%
+                            arrange(desc(n))
+                        
+                        ham_df_train <- df[df$Category == "0", ]
+                        word_counts_ham <- ham_df_train %>% count(splitted, sort = TRUE)
+                        ham_df_train <- left_join(ham_df_train, word_counts_ham, by = "splitted")
+                        ham_df_train <- ham_df_train %>% distinct()
+                        ham_df_train <- ham_df_train %>%
+                          arrange(desc(n))
+                        
+                        word_counts_train <- df %>% count(splitted, sort = TRUE)
+                        df <- left_join(df, word_counts, by = "splitted")
+                        tidy_text$Category <- "0 + 1"
+                        df <- df %>% distinct()
+                        df <- df %>%
+                          arrange(desc(n))
+                        
+                        spam_dict <- list()
+                        ham_dict <- list()
+                        probabilities <- list()
+                        neg_prob <- list()
+                        cnt_words <- sum(word_counts_train$n)
+                        
+                        for (i in 1:nrow(ham_df_train)) {
+                          key <- ham_df_train$splitted[i]
+                          value <- ham_df_train$n[i]
+                          ham_dict[[key]] <- value
+                        }                        
+                        for (i in 1:nrow(spam_df_train)) {
+                          key <- spam_df_train$splitted[i]
+                          value <- spam_df_train$n[i]
+                          spam_dict[[key]] <- value
+                        }
+                        for (word in word_counts_train$splitted) {
+                          if (exists(word, where = spam_dict)){
+                            probabilities[[word]] <- (spam_dict[[word]])/(cnt_words)
+                          }
+                          else{
+                            probabilities[[word]] <- 1/cnt_words
+                          }
+                          if (exists(word, where = ham_dict)){
+                            neg_prob[[word]] <- (ham_dict[[word]])/(cnt_words)
+                          }
+                          else{
+                            neg_prob[[word]] <- 1/cnt_words
+                          }
+                        }
+                        ret_list <- list(
+                          "first" = probabilities,
+                          "second" = neg_prob
+                        )
+                        
+                        return(ret_list)
+                    },
+                    
+                    # return prediction for a single message 
+                    predict = function(message, probabilities, neg_prob)
+                    {
+                        cleaned_message <- gsub("[[:punct:]]", " ", message)
+                         words <- unlist(strsplit(cleaned_message, " "))
+                         words <- subset(words, !words == "")
+                         prob_0 <- 1
+                         prob_1 <- 1
+                         for (word in words){
+                           if (word %in% names(probabilities)){
+                              prob_1 <- prob_1 * probabilities[[word]]
+                           }
+                           else if (word %in% names(neg_prob)){
+                             prob_1 <- prob_1 * neg_prob[[word]]
+                           }
+                           if (word %in% names(neg_prob)){
+                              prob_0 <- prob_0 * neg_prob[[word]]
+                           }
+                           else if (word %in% names(probabilities)){
+                             prob_0 <- prob_0 * neg_prob[[word]]
+                           }
+                         }
+                        if (prob_0 > prob_1) {
+                           return(0)
+                         }
+                         else {
+                           return(1)
+                         }
+                    },
+                    
+                    # score you test set so to get the understanding how well you model
+                    # works.
+                    # look at f1 score or precision and recall
+                    # visualize them 
+                    # try how well your model generalizes to real world data! 
+                    score = function(X_test, y_test)
+                    {
+                        model = naiveBayes()
+                        p_list <- model$fit(training_X, training_y)
+                        df_test <<- data.frame(
+                          Category = y_test,
+                          Message = X_test
+                        )
+                        df_test <<- unnest_tokens(df_test, "splitted", "Message", token = "lines")
+                        incorrect <<- .self$incorrect 
+                        messages_total <- nrow(df_test)
+                        predicted_correct <- 0
+                        
+                        true_positives <- 0 #correctly predicted spam
+                        true_negatives <- 0 #correctly predicted ham
+                        false_positives <- 0 #predicted spam but was ham
+                        false_negatives <- 0 #predicted ham but was spam
+                        
+                        for (i in 1:nrow(df_test)) {
+                          df_test$predicted[i] <<- paste(predict(df_test$splitted[i], p_list[["first"]], p_list[["second"]]))
+                        } 
+                        for (j in 1:nrow(df_test)) {
+                          if (as.integer(df_test$Category[j]) == as.integer(df_test$predicted[j])) {
+                            predicted_correct <- predicted_correct + 1
+                          }
+                          else {
+                            incorrect <<- rbind(incorrect, df_test$splitted[j])
+                          }
+                          
+                          if (as.integer(df_test$Category[j]) == 1 & as.integer(df_test$predicted[j] == 1)) {
+                            true_positives <- true_positives + 1
+                          }
+                          else if (as.integer(df_test$Category[j]) == 0 & as.integer(df_test$predicted[j] == 1)) {
+                            false_positives <- false_positives + 1
+                          }
+                          else if (as.integer(df_test$Category[j]) == 1 & as.integer(df_test$predicted[j] == 0)) {
+                            false_negatives <- false_negatives + 1
+                          }
+                          else if (as.integer(df_test$Category[j]) == 0 & as.integer(df_test$predicted[j] == 0)) {
+                            true_negatives <- true_negatives + 1
+                          }
+                          
+                        }
+                        colnames(incorrect) <<- "Incorrect"
+                        .self$df_test <- df_test
+                        #calculate f1
+                        p <- true_positives / (true_positives + false_positives) #precision
+                        r <- true_positives / (true_positives + false_negatives) #recall
+                        f1 <- (2 * p * r) / (p + r)
+                        #calculate score
+                        score <- (predicted_correct * 100)/messages_total
+                        #create a list with score and f1
+                        accuracy <- list(
+                          "score" = score,
+                          "f1" = f1,
+                          "true_positives" = true_positives,
+                          "true_negatives" = true_negatives,
+                          "false_positives" = false_positives,
+                          "false_negatives" = false_negatives
+                        )
+                        return(accuracy)
+                    }
+))
+
+#0 - not spam
+#1 - spam
+
+model = naiveBayes()
+p_list <- model$fit(training_X, training_y)
+
+#example of prediction
+prediction = model$predict("Go until jurong point, crazy.. Available only in bugis n great world la e buffet... Cine there got amore wat...", p_list[["first"]], p_list[["second"]])
+print(prediction)
+
+accuracy <- model$score(test_X, test_y)
+sprintf("Score: %.2f", accuracy[["score"]])
+sprintf("F1 score metric: %.2f", accuracy[["f1"]])
+#print(model$incorrect)
+```
+
+## Measure effectiveness of your classifier
+
+-   Note that accuracy is not always a good metric for your classifier.
+    Look at precision and recall curves, F1 score metric.
+-   Visualize them.
+-   Show failure cases.
+```{r}
+all_data <- nrow(model$df_test)
+incorrect_data <- nrow(model$incorrect)
+correct_data <- all_data - incorrect_data
+
+data_df <- data.frame(
+  Value = c(correct_data, incorrect_data),
+  Label = c("Correctly predicted", "Incorrectly predicted")
+)
+barplot(data_df$Value, names.arg = data_df$Label, col = c("green", "red"),
+        main = "Prediction accuracy",
+        xlab = "", ylab = "Count")
+
+```
+```{r}
+data <- data.frame(
+  Actual = c("Positive", "Negative", "Positive", "Negative"),
+  Predicted = c("Positive", "Negative", "Negative", "Positive"),
+  Value = c(accuracy[["true_positives"]], accuracy[["true_negatives"]], accuracy[["false_positives"]], accuracy[["false_negatives"]])
+)
+
+# Create a heatmap of the confusion matrix
+ggplot(data, aes(x = Actual, y = Predicted, fill = Value)) +
+  geom_tile() +
+  geom_text(aes(label = Value), vjust = 1) +
+  scale_fill_gradient(low = "white", high = "green") +
+  labs(title = "Confusion Matrix", x = "Actual", y = "Predicted") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(hjust = 1))
+```
+```{r}
+num_rows <- nrow(tidy_text_test)
+
+all_data_df <- tidy_text_test
+half_data_df <- tidy_text_test[1:(num_rows / 2), ]
+quart_data_df <- tidy_text_test[1:(num_rows / 4), ]
+one_e_data_df <- tidy_text_test[1:(num_rows / 8), ]
+one_sixth_data_df <- tidy_text_test[1:(num_rows / 16), ]
+
+res1 <- model$score(all_data_df$splitted, all_data_df$Category)
+res2 <- model$score(half_data_df$splitted, half_data_df$Category)
+res3 <- model$score(quart_data_df$splitted, quart_data_df$Category)
+res4 <- model$score(one_e_data_df$splitted, one_e_data_df$Category)
+res5 <- model$score(one_sixth_data_df$splitted, one_sixth_data_df$Category)
+
+values <- c(res1[["score"]] / 100,
+            res2[["score"]] / 100,
+            res3[["score"]] / 100,
+            res4[["score"]] / 100,
+            res5[["score"]] / 100)
+
+names <- c(toString(round((res1[["score"]] / 100), digits = 3)),
+           toString(round((res2[["score"]] / 100), digits = 3)),
+           toString(round((res3[["score"]] / 100), digits = 3)),
+           toString(round((res4[["score"]] / 100), digits = 3)),
+           toString(round((res5[["score"]] / 100), digits = 3)))
+
+barplot(values, names.args = names, xlab = "Size of dataset", ylab = "Accuracies", col = ("green"))
+axis(1, at = 1:length(names), labels = names)
+```
+```
+
+## Conclusions
+
+After our team have spent pretty huge amout of time writing and graphing
+our naive Bayes model, we can highlight some thoughts:
+
+-   First of all, our model predicts whether given message is spam or
+    not spam with almost perfect accuracy (score \~ 0.96, F1 score \~
+    0.85), but not good enough. For instance, on big dataflow, we will
+    get quite big amount of incorrectly predicted messages.
+-   Secondly, as barplot from above shows, size of dataset doesn't
+    matter. Margin of error fluctuates between 0.1 and 0.001.
+-   One more thing, we were convinced on our own experience, that
+    usually simple things work perfectly on complicated problems.
+
